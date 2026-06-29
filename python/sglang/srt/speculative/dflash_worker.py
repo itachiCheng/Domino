@@ -51,6 +51,14 @@ def _get_fused_kv_materialize_helper():
     return _FusedKVMaterializeHelper
 
 
+def _default_dflash_draft_backend(server_args: ServerArgs) -> str:
+    if getattr(server_args, "device", None) == "npu":
+        return "ascend"
+    import torch as _torch
+
+    return "triton" if _torch.version.hip else "flashinfer"
+
+
 class DFlashWorker:
     """DFlash speculative decoding worker (spec-v1, tp>=1/pp=1)."""
 
@@ -103,18 +111,14 @@ class DFlashWorker:
         draft_server_args = deepcopy(server_args)
         draft_server_args.skip_tokenizer_init = True
         draft_backend = draft_server_args.speculative_draft_attention_backend
-        supported_draft_backends = ("flashinfer", "fa3", "fa4", "triton")
+        supported_draft_backends = ("flashinfer", "fa3", "fa4", "triton", "ascend")
         if draft_backend is None:
             draft_backend, _ = draft_server_args.get_attention_backends()
         if draft_backend is None:
-            # Use triton on ROCm (no FlashInfer), flashinfer on CUDA
-            import torch as _torch
-
-            draft_backend = "triton" if _torch.version.hip else "flashinfer"
+            # Use triton on ROCm (no FlashInfer), flashinfer on CUDA, ascend on NPU.
+            draft_backend = _default_dflash_draft_backend(draft_server_args)
         elif draft_backend == "trtllm_mha":
-            import torch as _torch
-
-            _fb = "triton" if _torch.version.hip else "flashinfer"
+            _fb = _default_dflash_draft_backend(draft_server_args)
             logger.warning(
                 "DFLASH draft worker does not support 'trtllm_mha' because the "
                 "draft path requires non-causal attention. Falling back to "
@@ -123,9 +127,7 @@ class DFlashWorker:
             )
             draft_backend = _fb
         elif draft_backend not in supported_draft_backends:
-            import torch as _torch
-
-            _fb = "triton" if _torch.version.hip else "flashinfer"
+            _fb = _default_dflash_draft_backend(draft_server_args)
             logger.warning(
                 "DFLASH draft worker only supports attention_backend in %s for now, "
                 "but got %r. Falling back to '%s'.",

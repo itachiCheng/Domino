@@ -1032,7 +1032,7 @@ class DFlashDominoRollout:
             z = draft_hidden[:, 1:, :].contiguous()  # [B, num_draft, hidden]
 
         state = domino_helper.get_rollout_state()
-        if tp_size != 1:
+        if tp_size != 1 or device.type != "cuda":
             return self._domino_rollout_draft_block_tp_eager(
                 z=z,
                 verified_id=verified_id,
